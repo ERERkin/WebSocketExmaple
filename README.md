@@ -1,7 +1,7 @@
 # Wizard game
 
 ## Register
-### You should print: login {wizard name} {password}
+### You should print: register {wizard name} {password}
 
 ## Login
 ### You should print: login {wizard name} {password}
