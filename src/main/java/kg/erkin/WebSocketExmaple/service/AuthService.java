@@ -14,13 +14,38 @@ import org.springframework.web.socket.*;
 public class AuthService {
     private final SessionPool sessionPool;
     private final WizardPool wizardPool;
+    private final PasswordService passwordService;
     private final NotifyService notifyService;
 
-    public String login(WebSocketSession session, String wizardName) throws IOException {
-        if (isUsernameTaken(wizardName)) {
-            return "Username is already taken";
+    public String register(String username, String password) {
+        if (isWizardAlreadyExist(username)) {
+            return ResponseStatus.WIZARD_NAME_IS_ALREADY_TAKEN;
         }
-        if (!sessionPool.getSessions().stream().anyMatch(s -> s.getSession().getId().equals(session.getId()))) {
+
+        String encodedPassword = passwordService.encode(password);
+        Wizard newWizard = Wizard.builder().name(username).password(encodedPassword).health(100).build();
+        wizardPool.getWizards().add(newWizard);
+
+        return ResponseStatus.REGISTRATION_SUCCESSFUL;
+    }
+
+    public String login(WebSocketSession session, String wizardName, String password) throws IOException {
+        if (!isWizardIsExist(wizardName)) {
+            return ResponseStatus.WIZARD_DOES_NOT_EXIST;
+        }
+        if (isWizardAlreadyExist(wizardName)) {
+            return ResponseStatus.WIZARD_ALREADY_EXISTS;
+        }
+        Wizard wizard = getWizard(wizardName);
+        if (!passwordService.verify(password, wizard.getPassword())) {
+            return ResponseStatus.WRONG_PASSWORD;
+        }
+
+        if (wizard.getHealth() <= 0) {
+            return ResponseStatus.WIZARD_IS_DEAD;
+        }
+
+        if (sessionPool.getSessions().stream().noneMatch(s -> s.getSession().getId().equals(session.getId()))) {
             sessionPool.getSessions().add(SessionItem.builder().session(session).username(wizardName).build());
         } else {
             sessionPool.getSessions().stream()
@@ -28,11 +53,6 @@ public class AuthService {
                     .findFirst()
                     .ifPresent(s -> s.setUsername(wizardName));
         }
-        if (!isWizardIsExist(wizardName)) {
-            wizardPool.getWizards().add(Wizard.builder().name(wizardName).health(100).build());
-        }
-
-        Wizard wizard = getWizard(wizardName);
 
         notifyService.notifyAllSessions(session,
                 new TextMessage("New wizard has joined the game: " + wizard),
@@ -40,10 +60,10 @@ public class AuthService {
                         .map(SessionItem::getSession)
                         .toList());
 
-        return "You are logged in";
+        return ResponseStatus.LOGGED_IN;
     }
 
-    private boolean isUsernameTaken(String username) {
+    private boolean isWizardAlreadyExist(String username) {
         return sessionPool.getSessions().stream().anyMatch(s -> Objects.equals(s.getUsername(),username));
     }
 
@@ -80,6 +100,6 @@ public class AuthService {
         }
 
         sessionPool.removeSession(session);
-        return "You are logged out";
+        return ResponseStatus.LOGGED_OUT;
     }
 }
