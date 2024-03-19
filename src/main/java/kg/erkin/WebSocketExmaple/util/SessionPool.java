@@ -11,8 +11,8 @@ import org.springframework.web.socket.*;
 public class SessionPool {
     private List<SessionItem> sessions = new ArrayList<>();
 
-    public void addSession(WebSocketSession session, String username) {
-        sessions.add(SessionItem.builder().session(session).username(username).build());
+    public void addSession(WebSocketSession session, Long id) {
+        sessions.add(SessionItem.builder().session(session).id(id).build());
     }
 
     public void removeSession(WebSocketSession session) {

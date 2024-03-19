@@ -2,6 +2,7 @@ package kg.erkin.WebSocketExmaple.service;
 
 
 import java.io.*;
+import java.util.*;
 import kg.erkin.WebSocketExmaple.model.*;
 import kg.erkin.WebSocketExmaple.util.*;
 import lombok.*;
@@ -14,9 +15,10 @@ public class DamageService {
     private final SessionPool sessionPool;
     private final WizardPool wizardPool;
     private final NotifyService notifyService;
+    private final WizardService wizardService;
     public void damage(WebSocketSession sender, String attacktedWizard) throws IOException {
         WebSocketSession session = getSession(attacktedWizard);
-        Wizard wizard = findWizard(attacktedWizard);
+        Wizard wizard = wizardService.getByName(attacktedWizard);
         if (session == null) {
             return;
         }
@@ -24,9 +26,11 @@ public class DamageService {
             return;
         }
         wizard.setHealth(wizard.getHealth() - 10);
+        wizardService.save(wizard);
 
         if (wizard.getHealth() <= 0) {
-            sessionPool.getSessions().removeIf(s -> s.getUsername().equals(attacktedWizard));
+            Wizard finalWizard = wizard;
+            sessionPool.getSessions().removeIf(s -> s.getId().equals(finalWizard.getId()));
             notifyService.notifyAllSessions(session,
                     new TextMessage("Wizard " + attacktedWizard + " has been killed"),
                     sessionPool.getSessions().stream()
@@ -48,10 +52,12 @@ public class DamageService {
     }
 
     private WebSocketSession getSession(String username) {
-        return sessionPool.getSessions().stream().filter(s -> s.getUsername().equals(username)).findFirst().map(SessionItem::getSession).orElse(null);
+        Wizard wizard = wizardService.getByName(username);
+        return sessionPool.getSessions().stream()
+                .filter(s -> Objects.equals(s.getId(),wizard.getId()))
+                .findFirst()
+                .map(SessionItem::getSession)
+                .orElse(null);
     }
 
-    private Wizard findWizard(String username) {
-        return wizardPool.getWizards().stream().filter(w -> w.getName().equals(username)).findFirst().orElse(null);
-    }
 }

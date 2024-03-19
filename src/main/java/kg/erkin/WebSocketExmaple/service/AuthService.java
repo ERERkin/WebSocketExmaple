@@ -16,6 +16,7 @@ public class AuthService {
     private final WizardPool wizardPool;
     private final PasswordService passwordService;
     private final NotifyService notifyService;
+    private final WizardService wizardService;
 
     public String register(String username, String password) {
         if (isWizardAlreadyExist(username)) {
@@ -24,19 +25,19 @@ public class AuthService {
 
         String encodedPassword = passwordService.encode(password);
         Wizard newWizard = Wizard.builder().name(username).password(encodedPassword).health(100).build();
-        wizardPool.getWizards().add(newWizard);
+        newWizard = wizardService.save(newWizard);
 
         return ResponseStatus.REGISTRATION_SUCCESSFUL;
     }
 
     public String login(WebSocketSession session, String wizardName, String password) throws IOException {
-        if (!isWizardIsExist(wizardName)) {
+        if (!wizardService.isWizardAlreadyExist(wizardName)) {
             return ResponseStatus.WIZARD_DOES_NOT_EXIST;
         }
         if (isWizardAlreadyExist(wizardName)) {
             return ResponseStatus.WIZARD_ALREADY_EXISTS;
         }
-        Wizard wizard = getWizard(wizardName);
+        Wizard wizard = wizardService.getByName(wizardName);
         if (!passwordService.verify(password, wizard.getPassword())) {
             return ResponseStatus.WRONG_PASSWORD;
         }
@@ -46,12 +47,12 @@ public class AuthService {
         }
 
         if (sessionPool.getSessions().stream().noneMatch(s -> s.getSession().getId().equals(session.getId()))) {
-            sessionPool.getSessions().add(SessionItem.builder().session(session).username(wizardName).build());
+            sessionPool.getSessions().add(SessionItem.builder().session(session).id(wizard.getId()).build());
         } else {
             sessionPool.getSessions().stream()
                     .filter(s -> s.getSession().getId().equals(session.getId()))
                     .findFirst()
-                    .ifPresent(s -> s.setUsername(wizardName));
+                    .ifPresent(s -> s.setId(wizard.getId()));
         }
 
         notifyService.notifyAllSessions(session,
@@ -64,24 +65,22 @@ public class AuthService {
     }
 
     private boolean isWizardAlreadyExist(String username) {
-        return sessionPool.getSessions().stream().anyMatch(s -> Objects.equals(s.getUsername(),username));
-    }
-
-    private boolean isWizardIsExist(String wizardName) {
-        return wizardPool.getWizards().stream().anyMatch(w -> w.getName().equals(wizardName));
+        Wizard wizard = wizardService.getByName(username);
+        if (wizard == null) {
+            return false;
+        }
+        return sessionPool.getSessions().stream().anyMatch(s -> Objects.equals(s.getId(),wizard.getId()));
     }
 
     public String getWizards(String wizardName) {
+        Wizard wizard = wizardService.getByName(wizardName);
         return sessionPool.getSessions().stream()
-                .filter(s -> !Objects.equals(s.getUsername(), wizardName))
-                .map(sessionItem -> getWizard(sessionItem.getUsername()).toString())
+                .filter(s -> !Objects.equals(s.getId(), wizard.getId()))
+                .filter(s -> s.getId() != null)
+                .map(sessionItem -> wizardService
+                        .getById(sessionItem.getId())
+                        .toString())
                 .collect(Collectors.joining("\n"));
-    }
-
-    private Wizard getWizard(String wizardName) {
-        return wizardPool.getWizards().stream()
-                .filter(w -> w.getName().equals(wizardName))
-                .findFirst().orElse(null);
     }
 
     public String logout(WebSocketSession session) throws IOException {
@@ -91,7 +90,7 @@ public class AuthService {
                 .orElse(null);
 
         if (sessionItem != null) {
-            Wizard wizard = getWizard(sessionItem.getUsername());
+            Wizard wizard = wizardService.getById(sessionItem.getId());
             String logoutMessage = wizard + " has logged out";
             notifyService.notifyAllSessions(session, new TextMessage(logoutMessage),
                     sessionPool.getSessions().stream()

@@ -7,5 +7,5 @@ import org.springframework.web.socket.*;
 @Builder
 public class SessionItem {
     private WebSocketSession session;
-    private String username;
+    private Long id;
 }
